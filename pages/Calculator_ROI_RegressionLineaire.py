@@ -2,6 +2,11 @@ import streamlit as st
 import pandas as pd
 import statsmodels.api as sm
 
+st.set_page_config(
+    page_icon="💠",
+)
+
+
 # Titre et description
 st.title("Calcul du ROI d'un projet data")
 st.write("""
