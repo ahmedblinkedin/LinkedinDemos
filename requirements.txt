@@ -4,3 +4,7 @@ numpy
 statsmodels
 plotly
 graphviz
+matplotlib
+sklearn
+pymc
+arviz
