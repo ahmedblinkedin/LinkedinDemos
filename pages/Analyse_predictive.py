@@ -2,15 +2,23 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression, LogisticRegression, BayesianRidge
-from sklearn.metrics import r2_score, accuracy_score, mean_squared_error
+from sklearn.metrics import r2_score, accuracy_score, mean_squared_error, classification_report
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor, plot_tree
+from sklearn.datasets import make_classification, make_regression
+from sklearn.model_selection import train_test_split
+from sklearn.inspection import DecisionBoundaryDisplay
+
 from statsmodels.tsa.arima_process import ArmaProcess
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 import pymc as pm
 import arviz as az
 import seaborn as sns
+
 
 
 
@@ -83,7 +91,7 @@ y_nonlinear = np.sin(X_nonlinear) + np.random.normal(0, 0.1, (n_samples, 1))  # 
 st.write("### Régression linéaire sur une relation linéaire")
 st.write("Ici, les données suivent une tendance linéaire (y ≈ 2x + 1 + bruit). La régression linéaire est adaptée.")
 plt.figure(figsize=(12, 5))
-plot_regression(X, y, "Régression sur données linéaires", 1)
+plot_regression(X_linear, y_linear, "Régression sur données linéaires", 1)
 
 
 # Afficher le graphique
@@ -917,4 +925,200 @@ Où:
 - $m$: période saisonnière
 - $\phi$: paramètres AR
 - $\theta$: paramètres MA
+""")
+
+
+
+
+
+
+
+st.title("Visualisation des Arbres de Décision en Analyse Prédictive")
+st.markdown("""
+Cette application montre quand les arbres de décision fonctionnent bien et quand ils échouent.
+""")
+
+# Sidebar controls
+st.sidebar.header("Paramètres du Modèle d'arbres de décision")
+problem_type = st.sidebar.radio("Type de problème", ["Classification", "Régression"])
+max_depth = st.sidebar.slider("Profondeur max de l'arbre", 1, 10, 3)
+min_samples_split = st.sidebar.slider("Min samples pour split", 2, 20, 2)
+min_samples_leaf = st.sidebar.slider("Min samples par feuille", 1, 10, 1)
+
+# Generate synthetic data based on problem type
+def generate_data(problem_type):
+    if problem_type == "Classification":
+        # Créer 3 types de données de classification
+        X_linear, y_linear = make_classification(
+            n_samples=500, n_features=2, n_redundant=0, n_informative=2,
+            n_clusters_per_class=1, flip_y=0.1, class_sep=1.0, random_state=42
+        )
+        
+        X_nonlinear, y_nonlinear = make_classification(
+            n_samples=500, n_features=2, n_redundant=0, n_informative=2,
+            n_clusters_per_class=1, flip_y=0.1, class_sep=0.5, random_state=42
+        )
+        
+        X_xor, y_xor = make_classification(
+            n_samples=500, n_features=2, n_redundant=0, n_informative=2,
+            n_clusters_per_class=1, flip_y=0.1, class_sep=1.0, random_state=42
+        )
+        # Modifier pour créer un problème XOR
+        X_xor = np.random.randn(500, 2)
+        y_xor = np.logical_xor(X_xor[:, 0] > 0, X_xor[:, 1] > 0)
+        
+        return {
+            "Linéairement Séparable": (X_linear, y_linear),
+            "Non Linéaire": (X_nonlinear, y_nonlinear),
+            "Relation XOR": (X_xor, y_xor)
+        }
+    else:
+        # Créer 3 types de données de régression
+        X_linear, y_linear = make_regression(
+            n_samples=500, n_features=1, noise=20, random_state=42
+        )
+        
+        X_nonlinear, y_nonlinear = make_regression(
+            n_samples=500, n_features=1, noise=10, random_state=42
+        )
+        y_nonlinear = y_nonlinear + 100 * np.sin(X_nonlinear[:, 0] * 2)
+        
+        X_multi, y_multi = make_regression(
+            n_samples=500, n_features=2, n_informative=2, noise=30, random_state=42
+        )
+        
+        return {
+            "Relation Linéaire": (X_linear, y_linear),
+            "Relation Non Linéaire": (X_nonlinear, y_nonlinear),
+            "Multiples Variables": (X_multi, y_multi)
+        }
+
+# Generate data
+data = generate_data(problem_type)
+
+# Train model and plot results
+def train_and_plot(X, y, scenario_name, problem_type):
+    st.subheader(f"Scénario: {scenario_name}")
+    
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=42
+    )
+    
+    # Train model
+    if problem_type == "Classification":
+        model = DecisionTreeClassifier(
+            max_depth=max_depth,
+            min_samples_split=min_samples_split,
+            min_samples_leaf=min_samples_leaf,
+            random_state=42
+        )
+    else:
+        model = DecisionTreeRegressor(
+            max_depth=max_depth,
+            min_samples_split=min_samples_split,
+            min_samples_leaf=min_samples_leaf,
+            random_state=42
+        )
+    
+    model.fit(X_train, y_train)
+    
+    # Evaluate
+    y_pred = model.predict(X_test)
+    
+    if problem_type == "Classification":
+        accuracy = accuracy_score(y_test, y_pred)
+        st.metric("Accuracy", f"{accuracy:.2f}")
+        st.text(classification_report(y_test, y_pred))
+        
+        # Plot decision boundary
+        fig, ax = plt.subplots(figsize=(8, 6))
+        cmap = ListedColormap(['#FFAAAA', '#AAFFAA'])
+        
+        if X.shape[1] == 2:
+            DecisionBoundaryDisplay.from_estimator(
+                model, X, cmap=cmap, alpha=0.8, ax=ax, response_method="predict"
+            )
+            ax.scatter(X[:, 0], X[:, 1], c=y, edgecolor='k', s=20)
+            ax.set_title(f"Frontière de décision (Accuracy={accuracy:.2f})")
+        else:
+            ax.scatter(X[:, 0], y, c=y, edgecolor='k', s=20)
+            ax.set_title("Données de classification")
+        
+        st.pyplot(fig)
+    else:
+        mse = mean_squared_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
+        
+        col1, col2 = st.columns(2)
+        col1.metric("MSE", f"{mse:.2f}")
+        col2.metric("R² Score", f"{r2:.2f}")
+        
+        # Plot predictions vs actual
+        fig, ax = plt.subplots(figsize=(8, 6))
+        
+        if X.shape[1] == 1:
+            # Trier pour une visualisation propre
+            sorted_idx = np.argsort(X_test[:, 0])
+            ax.plot(X_test[sorted_idx, 0], y_test[sorted_idx], 'o', label='Vraies valeurs')
+            ax.plot(X_test[sorted_idx, 0], y_pred[sorted_idx], '-r', label='Prédictions')
+            ax.set_xlabel("Feature")
+            ax.set_ylabel("Target")
+        else:
+            ax.scatter(y_test, y_pred, alpha=0.5)
+            ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], '--r')
+            ax.set_xlabel("Vraies valeurs")
+            ax.set_ylabel("Prédictions")
+        
+        ax.set_title("Prédictions vs Vraies valeurs")
+        ax.legend()
+        ax.grid(True)
+        st.pyplot(fig)
+    
+    # Plot the tree
+    st.subheader("Visualisation de l'arbre de décision")
+    fig, ax = plt.subplots(figsize=(20, 10))
+    plot_tree(
+        model, 
+        filled=True, 
+        feature_names=[f"Feature {i}" for i in range(X.shape[1])],
+        class_names=[str(c) for c in np.unique(y)] if problem_type == "Classification" else None,
+        ax=ax
+    )
+    st.pyplot(fig)
+
+# Main app
+tab1, tab2 = st.tabs(["Cas où ça marche bien", "Cas où ça marche mal"])
+
+with tab1:
+    st.header("Cas où les arbres de décision fonctionnent bien")
+    if problem_type == "Classification":
+        train_and_plot(*data["Linéairement Séparable"], "Données Linéairement Séparables", problem_type)
+    else:
+        train_and_plot(*data["Relation Linéaire"], "Relation Linéaire Simple", problem_type)
+
+with tab2:
+    st.header("Cas où les arbres de décision ont des difficultés")
+    if problem_type == "Classification":
+        train_and_plot(*data["Relation XOR"], "Relation XOR (Non Linéaire Complexe)", problem_type)
+    else:
+        train_and_plot(*data["Relation Non Linéaire"], "Relation Non Linéaire Complexe", problem_type)
+
+# Explanation
+st.sidebar.markdown("""
+## Quand utiliser les arbres de décision?
+
+**Fonctionnent bien quand:**
+- Relations non linéaires entre features et target
+- Données avec interactions complexes
+- Features à échelles différentes
+- Données avec valeurs manquantes
+- Features catégorielles et numériques mélangées
+
+**Fonctionnent mal quand:**
+- Relations linéaires simples (modèles linéaires plus efficaces)
+- Extrapolation hors du domaine d'entraînement
+- Données avec beaucoup de bruit
+- Problèmes où la relation est XOR-like
+- Besoin de modèles petits et interprétables (arbres profonds deviennent complexes)
 """)
