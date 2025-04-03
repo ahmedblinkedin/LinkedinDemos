@@ -5,6 +5,7 @@ statsmodels
 plotly
 graphviz
 matplotlib
-sklearn
+scikit-learn
 pymc
 arviz
+seaborn
